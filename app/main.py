@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from app.errors import BusinessError, object_payload
 from app.pipeline import run, sample_text
-from app import store
+from app import store, publish
 from app.exporter import evidence_csv
 from app.timeops import display_full
 from app.numbers import display_number
@@ -15,8 +15,8 @@ app.mount("/static",StaticFiles(directory=Path(__file__).parent/"static"),name="
 templates=Jinja2Templates(directory=Path(__file__).parent/"templates")
 templates.env.filters["utc_instant"]=display_full
 templates.env.filters["display_number"]=display_number
-MODULES=['会话接收', '产品映射', '租约裁决', '并发扫描', '超用归属', '采购对照', '补传审计']
-for n,slug in enumerate(['sessions', 'products', 'leases', 'concurrency', 'excess', 'purchase', 'audit'],1):
+MODULES=['会话接收', '产品映射', '租约裁决', '并发扫描', '超用归属', '采购对照', '补传审计', '容量分界']
+for n,slug in enumerate(['sessions', 'products', 'leases', 'concurrency', 'excess', 'purchase', 'audit', 'boundary'],1):
     app.include_router(importlib.import_module(f"app.modules.m{n}_{slug}.handler").router)
 @app.exception_handler(BusinessError)
 async def domain_error(request,exc):
@@ -27,7 +27,7 @@ def health(): return {"status":"ok"}
 def home(request:Request): return page(request,1)
 @app.get("/module/{module}",response_class=HTMLResponse)
 def page(request:Request,module:int):
-    if module not in range(1,8): raise BusinessError("MODULE","模块不存在",404)
+    if module not in range(1,9): raise BusinessError("MODULE","模块不存在",404)
     ident=request.query_params.get("run_id")
     item=store.get(ident) if ident else store.save(sample_text(),run(sample_text()))
     return templates.TemplateResponse(request=request,name="workbench.html",context={"title":'软件许可证并发席位与离线租约',"modules":MODULES,"active":module,"run":item,"report":item["result"]["reports"][module-1]})
@@ -51,4 +51,13 @@ def review(payload:object=Body(...)):
 def export(ident:str):
     return Response(evidence_csv(store.get(ident)),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=evidence.csv"})
 @app.get("/api/sample")
-def sample(): return {"text":sample_text()}
+def sample(name:str|None=None):
+    if name=="shift":
+        return {"text":sample_text("capacity-shift.csv"),"label":"容量下调样例已载入"}
+    return {"text":sample_text()}
+@app.get("/api/boundary/{series}")
+def boundary_publication(series:str):
+    return publish.get(series)
+@app.get("/api/boundary/{series}/revisions")
+def boundary_revisions(series:str):
+    return {"series":series,"revisions":publish.revisions(series),"attempts":publish.attempts(series)}

@@ -6,6 +6,8 @@
 
 按租约有效区间扫线统计并发，同刻先结束后开始；离线到期前始终占席，重复心跳不重复占用。
 
+容量下调后按生效时刻形成席位责任分界：生效前已开始的受保护旧租约不追溯判超用，从新容量中扣除占席；只有下调后新占用越过剩余容量才计新超用。容量恢复或再次修订按新生效时刻重算，只更新受影响区间；同一修订重跑幂等，发布失败保留上一版完整结论与原始依据。
+
 ## 启动
 
 ```bash
@@ -14,7 +16,7 @@ docker compose exec -T app pytest -q
 docker compose config --quiet
 ```
 
-浏览器访问 http://localhost:18214 。默认载入仓内样例。工具条可选择CSV文件运行；样例文件位于 `sample_data/instrument.csv`。重复执行同一内容复用同一批次。
+浏览器访问 http://localhost:18214 。默认载入仓内样例。工具条可选择CSV文件运行；样例文件位于 `sample_data/instrument.csv`，容量下调场景见 `sample_data/capacity-shift.csv`。重复执行同一内容复用同一批次。
 
 ## 模块
 
@@ -25,6 +27,7 @@ docker compose config --quiet
 - M5 超用归属：`/module/5`，独立计算 `POST /api/5`。
 - M6 采购对照：`/module/6`，独立计算 `POST /api/6`。
 - M7 补传审计：`/module/7`，独立计算 `POST /api/7`。
+- M8 容量分界：`/module/8`，独立计算 `POST /api/8`。
 
 ## 输入与输出
 

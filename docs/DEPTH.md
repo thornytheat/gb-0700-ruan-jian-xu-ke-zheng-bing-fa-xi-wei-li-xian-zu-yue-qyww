@@ -14,6 +14,7 @@
 | M5 超用归属 | 运行超用归属并核对证据 | `POST /api/5` | `app/modules/m5_excess/rules.py` | `tests/test_excess.py` |
 | M6 采购对照 | 运行采购对照并核对证据 | `POST /api/6` | `app/modules/m6_purchase/rules.py` | `tests/test_purchase.py` |
 | M7 补传审计 | 运行补传审计并核对证据 | `POST /api/7` | `app/modules/m7_audit/rules.py` | `tests/test_audit.py` |
+| M8 容量分界 | 核对下调后受保护旧租约与新占用责任 | `POST /api/8` | `app/modules/m8_boundary/rules.py` | `tests/test_boundary.py`、`tests/test_publish.py` |
 
 ## 陷阱登记
 
@@ -27,6 +28,11 @@
 | TRAP-19 | 采购版冲突 | 静默采信错误值 | 显式版本优先级 | `app/modules/m5_excess/rules.py` | `tests/test_excess.py::test_excess_capacity_version` |
 | TRAP-23 | 同刻交接 | 静默采信错误值 | 先结束后开始 | `app/modules/m4_concurrency/rules.py` | `tests/test_concurrency.py::test_sweep_boundary` |
 | TRAP-26 | 陈旧补传 | 静默采信错误值 | 递增版本 | `app/modules/m7_audit/rules.py` | `tests/test_audit.py::test_audit_stale` |
+| TRAP-31 | 容量下调追溯 | 旧离线租约被判超用 | 生效时刻分界，旧租约受保护 | `app/capacity.py` | `tests/test_boundary.py::test_offline_prior_start_is_protected_not_excess` |
+| TRAP-32 | 完全不扣旧租约 | 新占用突破剩余容量 | 新容量扣除受保护占席 | `app/capacity.py` | `tests/test_boundary.py::test_new_usage_respects_remaining_capacity` |
+| TRAP-33 | 修订重跑重复扣减 | 同一修订扣两次 | 结论指纹幂等 | `app/publish.py` | `tests/test_publish.py::test_repeat_same_restored_revision_does_not_double_charge` |
+| TRAP-34 | 发布中断丢结论 | 旧版与旧租约记录丢失 | 事务回滚+失败尝试另记 | `app/publish.py` | `tests/test_publish.py::test_interruption_keeps_previous_conclusion` |
+| TRAP-35 | 全量重算掩盖变更 | 恢复后整段重算 | 按区间沿用未变化段 | `app/capacity.py` | `tests/test_boundary.py::test_recompute_after_revision_only_touches_affected_range` |
 
 ## 对账规则
 

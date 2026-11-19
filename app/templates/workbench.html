@@ -1,1 +1,61 @@
-{% extends 'base.html' %}{% block content %}<div class="kpis"><div class="kpi"><span>有效租约</span><b>{{run.result.leases|length}}</b></div><div class="kpi"><span>并发峰值</span><b>{{run.result.purchase|map(attribute='peak')|max if run.result.purchase else 0}}</b></div><div class="kpi"><span>超用区间</span><b>{{run.result.final|length}}</b></div><div class="kpi"><span>忽略心跳</span><b>{{run.result.lease_audit|selectattr('reason','equalto','HEARTBEAT_NO_SEAT')|list|length}}</b></div><div class="kpi"><span>隔离事件</span><b>{{run.result.quarantine|length}}</b></div></div><div class="grid"><section class="panel peak"><div class="panel-head"><h2>并发阶梯</h2><span>席位 / UTC</span></div><div class="chart-wrapper"><svg id="usage-chart" aria-label="席位并发与采购上限" role="img"></svg></div><div class="chart-key"><span class="used">实际并发</span><span class="licensed">采购上限</span><span id="chart-time"></span></div><div class="purchase-strip">{% for p in run.result.purchase %}<span title="{{p.excess_seat_hours}}"><b>{{p.product}}</b> 超用 {{p.excess_seat_hours|display_number}} 席位小时</span>{% endfor %}</div></section><section class="panel offline"><div class="panel-head"><h2>离线租约</h2><span>{{run.result.leases|selectattr('kind','equalto','offline')|list|length}} 份</span></div><div class="lock-grid">{% for lease in run.result.leases if lease.kind=='offline' %}<article><div class="lock-icon">锁</div><strong>{{lease.lease_id}}</strong><span>{{lease.user}}</span><b>{{lease.quantity}} 席</b><small>至 {{lease.end[:16]}}</small></article>{% else %}<p>当前无离线租约。</p>{% endfor %}</div></section><section class="panel events"><div class="panel-head"><h2>{{modules[active-1]}}记录</h2><span>{{report.rows|length}} 条</span></div><div class="scroll"><table class="ledger"><thead><tr>{% if report.rows %}{% for key in report.rows[0] %}<th>{{{'lease_id':'租约号','id':'租约号','product':'产品','user':'使用人','start':'开始时间','end':'结束时间','kind':'类型','version':'版本','seats':'原席位','line':'来源行','canonical':'规范产品','a':'起点UTC','b':'终点UTC','rev':'有效版本','quantity':'席位数','count':'并发数','ids':'占用租约','concurrent':'实际并发','capacity':'采购上限','excess':'超用席位','offenders':'责任分配','status':'状态','peak':'峰值','excess_seat_hours':'超用席位小时','overuse_segments':'超用段','reason':'原因码'}.get(key,key)}}</th>{% endfor %}{% endif %}</tr></thead><tbody>{% for event in report.rows %}<tr>{% for key,value in event.items() %}<td class="{{'num' if key in ['a','b','quantity','line','count','concurrent','capacity','excess','peak','excess_seat_hours'] else ''}}" title="{{value}}">{{value|utc_instant if key in ['a','b'] else value|display_number if key=='excess_seat_hours' else value}}</td>{% endfor %}</tr>{% else %}<tr><td>导入租约事件。</td></tr>{% endfor %}</tbody></table></div></section><section class="panel actions"><div class="panel-head"><h2>补传核验</h2><span>{{'超用待审' if run.result.blocked else '可复核'}}</span></div><form id="lease-form"><input id="lease-file" type="file" accept=".csv" aria-label="租约事件文件"><textarea id="lease-text" rows="4" placeholder="粘贴会话事件" aria-label="会话CSV"></textarea><div class="toolbar"><button type="button" class="btn" id="load-fixture">样例</button><button type="submit" class="btn filled">扫描并发</button></div><output id="lease-message" role="status">{{run.result.balance.accepted}} 采信 / {{run.result.balance.blank}} 空行</output></form><div class="review"><button class="btn" type="button" data-review="退回">退回</button><button class="btn" type="button" data-review="通过">确认</button><span>v{{run.revision}}</span></div><div class="quarantine">{% for reason,count in run.result.reasons.items() %}<div><span>{{reason}}</span><b>{{count}}</b></div>{% endfor %}</div></section></div><script type="application/json" id="lease-state">{{{'id':run.id,'revision':run.revision,'usage':run.result.usage}|tojson}}</script>{% endblock %}
+{% extends 'base.html' %}{% block content %}{% set boundary = run.result.get('boundary') %}{% set publication = run.result.get('publication') %}{% set boundary_status = run.result.get('boundary_status') %}
+<div class="kpis">
+  <div class="kpi"><span>有效租约</span><b>{{run.result.leases|length}}</b></div>
+  <div class="kpi"><span>并发峰值</span><b>{{run.result.purchase|map(attribute='peak')|max if run.result.purchase else 0}}</b></div>
+  <div class="kpi"><span>受保护旧租约</span><b>{{boundary.summary.protected_leases if boundary else 0}}</b></div>
+  <div class="kpi"><span>剩余容量下限</span><b>{{boundary.summary.remaining_min|display_number if boundary else '—'}}</b></div>
+  <div class="kpi"><span>新超用区间</span><b>{{run.result.final|length}}</b></div>
+  <div class="kpi"><span>隔离事件</span><b>{{run.result.quarantine|length}}</b></div>
+</div>
+<div class="grid">
+<section class="panel peak">
+  <div class="panel-head"><h2>并发阶梯</h2><span>席位 / UTC</span></div>
+  <div class="chart-wrapper"><svg id="usage-chart" aria-label="席位并发与采购上限" role="img"></svg></div>
+  <div class="chart-key"><span class="used">实际并发</span><span class="licensed">采购上限</span><span id="chart-time"></span></div>
+  <div class="purchase-strip">{% for p in run.result.purchase %}<span title="{{p.excess_seat_hours}}"><b>{{p.product}}</b> 超用 {{p.excess_seat_hours|display_number}} 席位小时</span>{% endfor %}</div>
+</section>
+<section class="panel boundary">
+  <div class="panel-head"><h2>容量分界</h2><span class="badge {{'warn' if boundary_status in ['stale','failed'] else 'ok'}}">{{{'published':'已发布','stale':'沿用上一版','failed':'未发布'}.get(boundary_status,'—')}}{% if publication %} · v{{publication.revision}}{% endif %}</span></div>
+  {% if boundary %}
+  <div class="chart-wrapper boundary-chart"><svg id="boundary-chart" aria-label="受保护旧租约占席与新占用超限" role="img"></svg></div>
+  <div class="chart-key"><span class="protected">受保护旧租约</span><span class="excess">新占用超限</span><span class="licensed">采购上限</span></div>
+  <div class="boundary-summary">
+    <span>生效时刻 <b>{{boundary.summary.epochs}}</b></span>
+    <span>容量变更 <b>{{boundary.summary.capacity_changes}}</b></span>
+    <span>受保护峰值 <b>{{boundary.summary.protected_peak}}</b></span>
+    <span>新占用峰值 <b>{{boundary.summary.new_peak}}</b></span>
+    <span>新超用峰值 <b>{{boundary.summary.new_excess_peak}}</b></span>
+    <span>新超用席位小时 <b>{{boundary.summary.new_excess_seat_hours|display_number}}</b></span>
+  </div>
+  {% if run.result.get('boundary_error') %}<p class="boundary-note bad">本次发布未生效：{{run.result.get('boundary_error')}}。页面与导出沿用上一版完整结论，旧受保护租约与原始依据保留。</p>{% endif %}
+  {% if boundary.merge %}
+  <p class="boundary-note">本次修订重算 {{boundary.merge.recomputed_segments}} 段、沿用 {{boundary.merge.carried_segments}} 段{% if boundary.merge.affected_from %}；受影响区间 {{boundary.merge.affected_from|utc_instant}}—{{boundary.merge.affected_until|utc_instant}}{% endif %}{% if boundary.merge.previous_revision %}（上一版 v{{boundary.merge.previous_revision}}）{% endif %}。</p>
+  {% endif %}
+  <div class="scroll boundary-scroll"><table class="ledger boundary-ledger"><thead><tr><th>产品</th><th>生效时刻</th><th>至</th><th>容量</th><th>受保护峰值</th><th>剩余下限</th><th>新占用峰值</th><th>新超用</th><th>状态</th></tr></thead><tbody>
+  {% for epoch in boundary.epochs %}<tr><td>{{epoch.product}}</td><td title="{{epoch.anchor}}">{{epoch.anchor|utc_instant}}</td><td>{{epoch.until|utc_instant}}</td><td class="num">{{epoch.capacity}}</td><td class="num">{{epoch.protected_peak}}</td><td class="num">{{epoch.remaining_min if epoch.remaining_min is not none else '—'}}</td><td class="num">{{epoch.new_peak}}</td><td class="num">{{epoch.new_excess_peak}}</td><td class="{{'bad' if epoch.status=='OVERUSE' else 'ok' if epoch.status in ['PASS','PROTECTED'] else 'warn'}}">{{{'PROTECTED':'受保护','OVERUSE':'新超用','PASS':'余量充足','CAPACITY_CONFLICT':'版本冲突'}.get(epoch.status,epoch.status)}}</td></tr>
+  {% else %}<tr><td colspan="9">未形成容量世代。</td></tr>{% endfor %}
+  </tbody></table></div>
+  <div class="protected-list"><div class="panel-sub">受保护旧租约（不追溯判超，只从新容量扣除）</div>
+    {% for p in boundary.protected_basis %}<div class="protected-item"><b>{{p.lease_id}}</b><span>{{p.user}}</span><span>{{'离线至原到期' if p.expiry_protected else '清除前已开始'}}</span><em>{{p.protected_from|utc_instant}} → {{p.protected_until|utc_instant}}</em></div>
+    {% else %}<p>本系列没有跨越生效时刻的旧租约。</p>{% endfor %}
+    {% if boundary.retained_protected %}<div class="panel-sub">保留档案（后续修订不再出现，记录不丢失）</div>{% for p in boundary.retained_protected %}<div class="protected-item retained"><b>{{p.lease_id}}</b><span>{{p.user}}</span><span>保留自 v{{p.retained_from_revision}}</span><em>{{p.protected_from|utc_instant}} → {{p.protected_until|utc_instant}}</em></div>{% endfor %}{% endif %}
+  </div>
+  {% else %}<p class="boundary-note">尚无容量分界结论。</p>{% endif %}
+</section>
+<section class="panel offline">
+  <div class="panel-head"><h2>离线租约</h2><span>{{run.result.leases|selectattr('kind','equalto','offline')|list|length}} 份</span></div>
+  <div class="lock-grid">{% for lease in run.result.leases if lease.kind=='offline' %}<article><div class="lock-icon">锁</div><strong>{{lease.lease_id}}</strong><span>{{lease.user}}</span><b>{{lease.quantity}} 席</b><small>至 {{lease.end[:16]}}</small></article>{% else %}<p>当前无离线租约。</p>{% endfor %}</div>
+</section>
+<section class="panel events">
+  <div class="panel-head"><h2>{{modules[active-1]}}记录</h2><span>{{report.rows|length}} 条</span></div>
+  <div class="scroll"><table class="ledger"><thead><tr>{% if report.rows %}{% for key in report.rows[0] %}<th>{{{'lease_id':'租约号','id':'租约号','product':'产品','user':'使用人','start':'开始时间','end':'结束时间','kind':'类型','version':'版本','seats':'原席位','line':'来源行','canonical':'规范产品','a':'起点UTC','b':'终点UTC','rev':'有效版本','quantity':'席位数','count':'并发数','ids':'占用租约','concurrent':'实际并发','capacity':'采购上限','excess':'超用席位','offenders':'责任分配','status':'状态','peak':'峰值','excess_seat_hours':'超用席位小时','overuse_segments':'超用段','reason':'原因码','anchor':'生效时刻','protected':'受保护占席','protected_over':'旧租约占超','remaining':'剩余容量','new_seats':'新占用','new_excess':'新超用'}.get(key,key)}}</th>{% endfor %}{% endif %}</tr></thead><tbody>{% for event in report.rows %}<tr>{% for key,value in event.items() %}<td class="{{'num' if key in ['a','b','quantity','line','count','concurrent','capacity','excess','peak','excess_seat_hours','protected','remaining','new_seats','new_excess','protected_over'] else ''}}" title="{{value}}">{{value|utc_instant if key in ['a','b','anchor'] else value|display_number if key=='excess_seat_hours' else value}}</td>{% endfor %}</tr>{% else %}<tr><td>导入租约事件。</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<section class="panel actions">
+  <div class="panel-head"><h2>补传核验</h2><span>{{'超用待审' if run.result.blocked else '可复核'}}</span></div>
+  <form id="lease-form"><input id="lease-file" type="file" accept=".csv" aria-label="租约事件文件"><textarea id="lease-text" rows="4" placeholder="粘贴会话事件" aria-label="会话CSV"></textarea><div class="toolbar"><button type="button" class="btn" id="load-fixture">样例</button><button type="button" class="btn" id="load-shift">容量下调样例</button><button type="submit" class="btn filled">扫描并发</button></div><output id="lease-message" role="status">{{run.result.balance.accepted}} 采信 / {{run.result.balance.blank}} 空行</output></form>
+  <div class="review"><button class="btn" type="button" data-review="退回">退回</button><button class="btn" type="button" data-review="通过">确认</button><span>v{{run.revision}}</span></div>
+  <div class="quarantine">{% for reason,count in run.result.reasons.items() %}<div><span>{{reason}}</span><b>{{count}}</b></div>{% endfor %}</div>
+</section>
+</div>
+<script type="application/json" id="lease-state">{{{'id':run.id,'revision':run.revision,'usage':run.result.usage,'boundary':boundary}|tojson}}</script>
+{% endblock %}
